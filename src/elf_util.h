@@ -28,6 +28,7 @@ namespace elf {
 
 typedef uint16_t Elf64_Half;
 typedef uint32_t Elf64_Word;
+  typedef uint64_t Elf64_Xword;
 typedef uint64_t Elf64_Addr;
 typedef uint64_t Elf64_Off;
 
@@ -66,7 +67,7 @@ struct ElfBinary {
   //  std::vector<ElfSectionHeader> section_headers;
 };
 
-void parse_object_file(const std::string &file_path);
+void parse_object(const std::string &file_path);
 
 void assert_expected_elf_header(const ElfHeader &elf_header);
 };  // namespace elf

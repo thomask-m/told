@@ -33,6 +33,6 @@ int main(int argc, char *argv[]) {
   // Takes some filepaths that are supposed to be elf binaries and attempt to
   // link them into an executable
   for (int i = 1; i < argc; i++) {
-    elf::parse_object_file(argv[i]);
+    elf::parse_object(argv[i]);
   }
 }
