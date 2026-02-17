@@ -12,11 +12,12 @@ namespace fs = std::filesystem;
 
 namespace elf {
 
-void parse_object(const std::string &file_path) {
+ElfBinary parse_object(const std::string &file_path) {
   const fs::path obj_path{file_path};
   assert(fs::exists(obj_path) && "Input object file needs to exist");
 
-  ElfBinary elf_binary;
+  fs::path canonicalized_path = fs::canonical(obj_path);
+  ElfBinary module{canonicalized_path};
   std::ifstream obj_file{obj_path, std::ios::binary};
   // N.B. - ifstream read doesn't actually handle endianness, it just
   //        reads the bytes in the order they're stored and interprets
@@ -25,13 +26,25 @@ void parse_object(const std::string &file_path) {
   //        so happens that it interprets the bytes in the way that I
   //        want.
   //        For the purposes of this toy linker - this is okay.
-  obj_file.read(reinterpret_cast<char *>(&elf_binary.elf_header),
+  obj_file.read(reinterpret_cast<char *>(&module.elf_header),
                 sizeof(ElfHeader));
+  assert_expected_elf_header(module.elf_header);
 
-  assert_expected_elf_header(elf_binary.elf_header);
+  module.section_headers.resize(module.elf_header.e_shnum);
+  std::cout << module.section_headers.size() << std::endl;
+  obj_file.seekg(module.elf_header.e_shoff);
+  std::cout << obj_file.tellg() << std::endl;
+  for (int i = 0; i < module.elf_header.e_shnum; ++i) {
+    obj_file.read(reinterpret_cast<char *>(&module.section_headers[i]),
+                  sizeof(ElfSectionHeader));
+  }
+  std::cout << module.section_headers.size() << std::endl;
+  std::cout << obj_file.tellg() << std::endl;
+
+  return module;
 }
 
-// Assert some basic assumptions that told makes about its given ELF object
+// Assert some basic assumptions that linker makes about its given ELF object
 // files.
 void assert_expected_elf_header(const ElfHeader &elf_header) {
   unsigned char magic[4]{0x7f, 'E', 'L', 'F'};
@@ -41,6 +54,7 @@ void assert_expected_elf_header(const ElfHeader &elf_header) {
   assert(elf_header.e_ident[EI_DATA] == ELFDATA2LSB && "Not little-endian");
   assert(elf_header.e_ident[EI_OSABI] == ELFOSABI_SYSV && "Not SystemV ABI");
   assert(elf_header.e_machine == EM_X86_64 && "Not AMD x64");
+  // TODO - add more constraints if necessary
 }
 
 }  // namespace elf

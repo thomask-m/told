@@ -2,7 +2,8 @@
 /// by thomask-m
 ///
 /// The main goal is to take some simple set of ELF relocatable files and create
-/// an actual loadable ELF executable. The target machine is my x86_64 linux machine.
+/// an actual loadable ELF executable. The target machine is my x86_64 linux
+/// machine.
 ///
 /// Another "side-effect" goal is using this project to get better at writing
 /// C++.
@@ -33,6 +34,7 @@ int main(int argc, char *argv[]) {
   // Takes some filepaths that are supposed to be elf binaries and attempt to
   // link them into an executable
   for (int i = 1; i < argc; i++) {
-    elf::parse_object(argv[i]);
+    elf::ElfBinary module = elf::parse_object(argv[i]);
+    std::cout << module.given_path << std::endl;
   }
 }

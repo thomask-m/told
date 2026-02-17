@@ -1,10 +1,11 @@
-// compile me:
-// gcc basic_main.c -o basic_main
+// compile me but don't link me:
+// gcc -c basic_main.c -o basic_main.o
+// gcc -c add -o add.o
 
-int add(int a, int b) {
-  return a + b;
-}
+#include <stdio.h>
+
+int add(int, int);
 
 int main() {
-  int c = add(2, 3);
+  printf("%d\n", add(2, 3));
 }
