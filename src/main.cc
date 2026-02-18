@@ -35,6 +35,13 @@ int main(int argc, char *argv[]) {
   // link them into an executable
   for (int i = 1; i < argc; i++) {
     elf::ElfBinary module = elf::parse_object(argv[i]);
-    std::cout << module.given_path << std::endl;
+    std::cout << " module: " << module.given_path;
+
+    // need some way for the module to fetch the section names.
+
+    for (int j = 0; j < module.section_headers.size(); ++j) {
+      std::cout << " section size: " << module.section_headers[j].sh_size
+                << std::endl;
+    }
   }
 }

@@ -24,7 +24,7 @@ ElfBinary parse_object(const std::string &file_path) {
   //        based on native endianness (so in this case, since I'm
   //        mostly testing this code on my debian x64 machine, it just
   //        so happens that it interprets the bytes in the way that I
-  //        want.
+  //        want).
   //        For the purposes of this toy linker - this is okay.
   obj_file.read(reinterpret_cast<char *>(&module.elf_header),
                 sizeof(ElfHeader));
