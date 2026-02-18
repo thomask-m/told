@@ -7,7 +7,9 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
-#include <vector>
+#include <unordered_map>
+#include <utility>
+// #include <vector>
 
 #define EI_NIDENT (16)
 
@@ -23,6 +25,8 @@
 #define ELFOSABI_SYSV (0)
 
 #define EM_X86_64 (62)
+
+#define SHN_UNDEF (0) /* Undefined section */
 
 namespace elf {
 
@@ -64,7 +68,7 @@ struct ElfSectionHeader {
 
 struct ElfBinary {
   ElfHeader elf_header;
-  std::vector<ElfSectionHeader> section_headers;
+  std::unordered_map<std::string, ElfSectionHeader> section_headers;
   std::string given_path;
 
   ElfBinary(const std::string &given_path) : given_path(given_path) {}

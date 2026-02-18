@@ -26,6 +26,8 @@ void print_usage() {
   std::cerr << "  ./told FILE1 .. FILEN\n";
 }
 
+// g++ main.cc elf_util.cc -o main --std=c++17 && ./main ../data/basic_main.o
+// ../data/add.o
 int main(int argc, char *argv[]) {
   if (argc == 1) {
     print_usage();
@@ -35,13 +37,23 @@ int main(int argc, char *argv[]) {
   // link them into an executable
   for (int i = 1; i < argc; i++) {
     elf::ElfBinary module = elf::parse_object(argv[i]);
-    std::cout << " module: " << module.given_path;
+    std::cout << "module: " << module.given_path << std::endl;
 
     // need some way for the module to fetch the section names.
 
-    for (int j = 0; j < module.section_headers.size(); ++j) {
-      std::cout << " section size: " << module.section_headers[j].sh_size
-                << std::endl;
+    for (auto sh_iter = module.section_headers.begin();
+         sh_iter != module.section_headers.end(); ++sh_iter) {
+      std::string name = sh_iter->first;
+      elf::ElfSectionHeader sh = sh_iter->second;
+      std::cout << "  name: " << name << std::endl;
+      std::cout << "   section types: " << sh.sh_type << std::endl;
+      std::cout << "   section flags: " << sh.sh_flags << std::endl;
+      std::cout << "   section size: " << sh.sh_size << std::endl;
+      std::cout << "   addr: " << sh.sh_addr << std::endl;
+      std::cout << "   address align: " << sh.sh_addralign << std::endl;
+      std::cout << "   section header offset: " << sh.sh_offset << std::endl;
+
+      std::cout << "----" << std::endl;
     }
   }
 }

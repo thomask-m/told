@@ -7,6 +7,9 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -30,16 +33,26 @@ ElfBinary parse_object(const std::string &file_path) {
                 sizeof(ElfHeader));
   assert_expected_elf_header(module.elf_header);
 
-  module.section_headers.resize(module.elf_header.e_shnum);
-  std::cout << module.section_headers.size() << std::endl;
   obj_file.seekg(module.elf_header.e_shoff);
-  std::cout << obj_file.tellg() << std::endl;
+
+  std::vector<ElfSectionHeader> s_headers(module.elf_header.e_shnum);
   for (int i = 0; i < module.elf_header.e_shnum; ++i) {
-    obj_file.read(reinterpret_cast<char *>(&module.section_headers[i]),
+    obj_file.read(reinterpret_cast<char *>(&s_headers[i]),
                   sizeof(ElfSectionHeader));
   }
-  std::cout << module.section_headers.size() << std::endl;
-  std::cout << obj_file.tellg() << std::endl;
+
+  std::unordered_map<std::string, ElfSectionHeader> section_headers_with_name(
+      s_headers.size());
+  obj_file.seekg(s_headers[module.elf_header.e_shstrndx].sh_offset);
+  uint64_t shstr_offset = obj_file.tellg();
+  for (int i = 0; i < s_headers.size(); ++i) {
+    std::string name{};
+    obj_file.seekg(shstr_offset + s_headers[i].sh_name);
+    std::getline(obj_file, name, '\0');
+    section_headers_with_name.emplace(std::make_pair(name, s_headers[i]));
+    obj_file.seekg(shstr_offset);
+  }
+  module.section_headers = std::move(section_headers_with_name);
 
   return module;
 }
@@ -54,6 +67,8 @@ void assert_expected_elf_header(const ElfHeader &elf_header) {
   assert(elf_header.e_ident[EI_DATA] == ELFDATA2LSB && "Not little-endian");
   assert(elf_header.e_ident[EI_OSABI] == ELFOSABI_SYSV && "Not SystemV ABI");
   assert(elf_header.e_machine == EM_X86_64 && "Not AMD x64");
+  assert(elf_header.e_shstrndx != SHN_UNDEF &&
+         "Section header string table section needs to be present");
   // TODO - add more constraints if necessary
 }
 
