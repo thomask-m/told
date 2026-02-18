@@ -34,26 +34,25 @@ ElfBinary parse_object(const std::string &file_path) {
   assert_expected_elf_header(module.elf_header);
 
   obj_file.seekg(module.elf_header.e_shoff);
-
   std::vector<ElfSectionHeader> s_headers(module.elf_header.e_shnum);
   for (int i = 0; i < module.elf_header.e_shnum; ++i) {
     obj_file.read(reinterpret_cast<char *>(&s_headers[i]),
                   sizeof(ElfSectionHeader));
   }
 
-  std::unordered_map<std::string, ElfSectionHeader> section_headers_with_name(
-      s_headers.size());
+  std::unordered_map<std::string, ElfSectionHeader> section_headers_with_name{};
+  section_headers_with_name.reserve(s_headers.size());
   obj_file.seekg(s_headers[module.elf_header.e_shstrndx].sh_offset);
   uint64_t shstr_offset = obj_file.tellg();
   for (int i = 0; i < s_headers.size(); ++i) {
     std::string name{};
     obj_file.seekg(shstr_offset + s_headers[i].sh_name);
     std::getline(obj_file, name, '\0');
-    section_headers_with_name.emplace(std::make_pair(name, s_headers[i]));
+    section_headers_with_name.emplace(name, s_headers[i]);
     obj_file.seekg(shstr_offset);
   }
-  module.section_headers = std::move(section_headers_with_name);
 
+  module.section_headers = std::move(section_headers_with_name);
   return module;
 }
 
