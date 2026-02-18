@@ -42,14 +42,13 @@ ElfBinary parse_object(const std::string &file_path) {
 
   std::unordered_map<std::string, ElfSectionHeader> section_headers_with_name{};
   section_headers_with_name.reserve(s_headers.size());
-  obj_file.seekg(s_headers[module.elf_header.e_shstrndx].sh_offset);
-  uint64_t shstr_offset = obj_file.tellg();
+
+  uint64_t shstr_offset = s_headers[module.elf_header.e_shstrndx].sh_offset;
   for (int i = 0; i < s_headers.size(); ++i) {
     std::string name{};
     obj_file.seekg(shstr_offset + s_headers[i].sh_name);
     std::getline(obj_file, name, '\0');
     section_headers_with_name.emplace(name, s_headers[i]);
-    obj_file.seekg(shstr_offset);
   }
 
   module.section_headers = std::move(section_headers_with_name);
