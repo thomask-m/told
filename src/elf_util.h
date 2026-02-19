@@ -28,6 +28,13 @@
 
 #define SHN_UNDEF (0) /* Undefined section */
 
+#define SHT_NULL (0)     /* Section header table entry unused */
+#define SHT_PROGBITS (1) /* Program data */
+
+#define SHF_WRITE (1 << 0)     /* Writable */
+#define SHF_ALLOC (1 << 1)     /* Occupies memory during execution */
+#define SHF_EXECINSTR (1 << 2) /* Executable */
+
 namespace elf {
 
 typedef uint16_t Elf64_Half;
@@ -64,6 +71,17 @@ struct ElfSectionHeader {
   Elf64_Word sh_info;       /* Additional section information */
   Elf64_Xword sh_addralign; /* Section alignment */
   Elf64_Xword sh_entsize;   /* Entry size if section holds table */
+};
+
+struct ElfProgramHeader {
+  Elf64_Word p_type;    /* Segment type */
+  Elf64_Word p_flags;   /* Segment flags */
+  Elf64_Off p_offset;   /* Segment file offset */
+  Elf64_Addr p_vaddr;   /* Segment virtual address */
+  Elf64_Addr p_paddr;   /* Segment physical address */
+  Elf64_Xword p_filesz; /* Segment size in file */
+  Elf64_Xword p_memsz;  /* Segment size in memory */
+  Elf64_Xword p_align;  /* Segment alignment */
 };
 
 struct ElfBinary {

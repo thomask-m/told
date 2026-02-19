@@ -17,9 +17,12 @@
 
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "elf_util.h"
 #include "told.h"
+
+static const std::string executable_output_path = "a.out";
 
 void print_usage() {
   std::cerr << "Usage --\n";
@@ -35,6 +38,8 @@ int main(int argc, char *argv[]) {
 
   // Takes some filepaths that are supposed to be elf binaries and attempt to
   // link them into an executable
+  std::vector<elf::ElfBinary> modules{};
+  modules.reserve(argc - 1);
   for (int i = 1; i < argc; i++) {
     elf::ElfBinary module = elf::parse_object(argv[i]);
     std::cout << "module: " << module.given_path << std::endl;
@@ -44,16 +49,19 @@ int main(int argc, char *argv[]) {
     for (auto sh_iter = module.section_headers.begin();
          sh_iter != module.section_headers.end(); ++sh_iter) {
       std::string name = sh_iter->first;
-      elf::ElfSectionHeader sh = sh_iter->second;
+      // elf::ElfSectionHeader sh = sh_iter->second;
       std::cout << "  name: " << name << std::endl;
-      std::cout << "   section types: " << sh.sh_type << std::endl;
-      std::cout << "   section flags: " << sh.sh_flags << std::endl;
-      std::cout << "   section size: " << sh.sh_size << std::endl;
-      std::cout << "   addr: " << sh.sh_addr << std::endl;
-      std::cout << "   address align: " << sh.sh_addralign << std::endl;
-      std::cout << "   section header offset: " << sh.sh_offset << std::endl;
+      // std::cout << "   section types: " << sh.sh_type << std::endl;
+      // std::cout << "   section flags: " << sh.sh_flags << std::endl;
+      // std::cout << "   section size: " << sh.sh_size << std::endl;
+      // std::cout << "   addr: " << sh.sh_addr << std::endl;
+      // std::cout << "   address align: " << sh.sh_addralign << std::endl;
+      // std::cout << "   section header offset: " << sh.sh_offset << std::endl;
 
-      std::cout << "----" << std::endl;
+      // std::cout << "----" << std::endl;
     }
+    modules.push_back(std::move(module));
   }
+
+  auto e = told::convert_obj_to_exec(modules);
 }
