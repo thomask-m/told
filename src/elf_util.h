@@ -9,7 +9,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
-// #include <vector>
+#include <vector>
 
 #define EI_NIDENT (16)
 
@@ -23,8 +23,16 @@
 
 #define EI_OSABI (7)
 #define ELFOSABI_SYSV (0)
+#define EI_VERSION (6) /* File version byte index */
+
+/* Legal values for e_type (object file type). */
+#define ET_NONE (0)
+#define ET_REL (1)  /* Relocatable file */
+#define ET_EXEC (2) /* Executable file */
 
 #define EM_X86_64 (62)
+
+#define EV_CURRENT (1) /* Current version */
 
 #define SHN_UNDEF (0) /* Undefined section */
 
@@ -34,6 +42,13 @@
 #define SHF_WRITE (1 << 0)     /* Writable */
 #define SHF_ALLOC (1 << 1)     /* Occupies memory during execution */
 #define SHF_EXECINSTR (1 << 2) /* Executable */
+
+#define PT_NULL (0) /* Program header table entry unused */
+#define PT_LOAD (1) /* Loadable program segment */
+
+#define PF_X (1 << 0) /* Segment is executable */
+#define PF_W (1 << 1) /* Segment is writable */
+#define PF_R (1 << 2) /* Segment is readable */
 
 namespace elf {
 
@@ -86,7 +101,10 @@ struct ElfProgramHeader {
 
 struct ElfBinary {
   ElfHeader elf_header;
+  // TODO: i guess std::string isn't a very descriptive type for what is
+  //       basically the section's name. :p
   std::unordered_map<std::string, ElfSectionHeader> section_headers;
+  std::unordered_map<std::string, std::vector<char>> sections;
   std::string given_path;
 
   ElfBinary(const std::string &given_path) : given_path(given_path) {}
@@ -95,4 +113,5 @@ struct ElfBinary {
 ElfBinary parse_object(const std::string &file_path);
 
 void assert_expected_elf_header(const ElfHeader &elf_header);
+
 };  // namespace elf

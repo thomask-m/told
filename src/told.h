@@ -20,19 +20,24 @@ struct Segment {
   uint64_t start_addr;
   uint64_t size;
   bool loadable;
+  bool executable;
 
-  Segment(uint64_t start_addr, uint64_t size, bool loadable)
-      : start_addr(start_addr), size(size), loadable(loadable) {}
+  Segment(uint64_t start_addr, uint64_t size, bool loadable, bool executable)
+      : start_addr(start_addr),
+        size(size),
+        loadable(loadable),
+        executable(executable) {}
 
   Segment(Segment&& other) {
-    std::cout << "moved!" << std::endl;
     start_addr = other.start_addr;
     size = other.size;
     loadable = other.loadable;
+    executable = other.executable;
 
     other.start_addr = 0;
     other.size = 0;
     other.loadable = false;
+    other.executable = false;
   }
 };
 

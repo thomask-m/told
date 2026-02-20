@@ -52,6 +52,20 @@ ElfBinary parse_object(const std::string &file_path) {
   }
 
   module.section_headers = std::move(section_headers_with_name);
+
+  std::unordered_map<std::string, std::vector<char>> sections_with_names;
+  sections_with_names.reserve(s_headers.size());
+  for (const auto &sh : module.section_headers) {
+    std::vector<char> section_data_buffer(sh.second.sh_size);
+    // section_data_buffer.reserve(sh.second.sh_size);
+
+    obj_file.seekg(sh.second.sh_offset);
+    obj_file.read(section_data_buffer.data(), sh.second.sh_size);
+
+    sections_with_names.emplace(sh.first, std::move(section_data_buffer));
+  }
+
+  module.sections = std::move(sections_with_names);
   return module;
 }
 
