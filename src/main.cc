@@ -19,10 +19,7 @@
 #include <string>
 #include <vector>
 
-#include "elf_util.h"
 #include "told.h"
-
-static const std::string executable_output_path = "a.out";
 
 void print_usage() {
   std::cerr << "Usage --\n";
@@ -41,7 +38,7 @@ int main(int argc, char *argv[]) {
   std::vector<elf::ElfBinary> modules{};
   modules.reserve(argc - 1);
   for (int i = 1; i < argc; i++) {
-    elf::ElfBinary module = elf::parse_object(argv[i]);
+    elf::ElfBinary module = told::parse_object(argv[i]);
     modules.push_back(std::move(module));
   }
 

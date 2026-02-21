@@ -17,38 +17,26 @@
 namespace told {
 
 struct Segment {
-  uint64_t start_addr;
-  uint64_t size;
+  elf::Block block;
+  size_t start_addr;
+  size_t size;
+  size_t relative_offset;
+  bool readable;
   bool loadable;
   bool executable;
-
-  Segment(uint64_t start_addr, uint64_t size, bool loadable, bool executable)
-      : start_addr(start_addr),
-        size(size),
-        loadable(loadable),
-        executable(executable) {}
-
-  Segment(Segment&& other) {
-    start_addr = other.start_addr;
-    size = other.size;
-    loadable = other.loadable;
-    executable = other.executable;
-
-    other.start_addr = 0;
-    other.size = 0;
-    other.loadable = false;
-    other.executable = false;
-  }
+  bool writable;
 };
 
 struct Executable {
   std::string path;
-  std::unordered_map<std::string, Segment> segments;
+  std::unordered_map<elf::SectionType, Segment> segments;
 };
 
-Executable convert_obj_to_exec(const std::vector<elf::ElfBinary>& modules);
+elf::ElfBinary parse_object(const std::string &file_path);
 
-void write_out(const Executable& exec,
-               const std::vector<elf::ElfBinary>& modules);
+Executable convert_obj_to_exec(const std::vector<elf::ElfBinary> &modules);
 
-}  // namespace told
+void write_out(const Executable &exec,
+               const std::vector<elf::ElfBinary> &modules);
+
+} // namespace told

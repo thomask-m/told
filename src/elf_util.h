@@ -58,6 +58,12 @@ typedef uint64_t Elf64_Xword;
 typedef uint64_t Elf64_Addr;
 typedef uint64_t Elf64_Off;
 
+typedef std::vector<char> Block;
+
+enum class SectionType { None, Text, Data, Header };
+
+SectionType s_type_from_name(const std::string &n);
+
 struct ElfHeader {
   unsigned char e_ident[EI_NIDENT]; /* Magic number and other info */
   Elf64_Half e_type;                /* Object file type */
@@ -101,10 +107,8 @@ struct ElfProgramHeader {
 
 struct ElfBinary {
   ElfHeader elf_header;
-  // TODO: i guess std::string isn't a very descriptive type for what is
-  //       basically the section's name. :p
-  std::unordered_map<std::string, ElfSectionHeader> section_headers;
-  std::unordered_map<std::string, std::vector<char>> sections;
+  std::unordered_map<SectionType, ElfSectionHeader> section_headers;
+  std::unordered_map<SectionType, Block> sections;
   std::string given_path;
 
   ElfBinary(const std::string &given_path) : given_path(given_path) {}
@@ -114,4 +118,4 @@ ElfBinary parse_object(const std::string &file_path);
 
 void assert_expected_elf_header(const ElfHeader &elf_header);
 
-};  // namespace elf
+}; // namespace elf

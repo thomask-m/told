@@ -1,12 +1,22 @@
+#include "elf_util.h"
 #include "told.h"
 
+#include <array>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 
+// TODO: maybe this can just be a dry-run flag or maybe specify it can be
+//       passed to stdout.
 #define TRULY_WRITE_EXEC_FILE (true)
+
+static const std::array<elf::SectionType, 1> ACCEPTED_SECTIONS{
+    elf::SectionType::Text};
+static const std::array<uint8_t, 4> ACCEPTED_FLAGS{
+    PF_R, PF_X | PF_R, PF_W | PF_R, PF_R | PF_W | PF_X};
 
 namespace told {
 // TODO: it would be cool to write to the binary like this but nbd for now..
@@ -42,48 +52,78 @@ namespace told {
 //   return os;
 // }
 
+elf::ElfBinary parse_object(const std::string &file_path) {
+  return elf::parse_object(file_path);
+}
+
+void merge_sections(Executable &e, const std::vector<elf::ElfBinary> &modules) {
+  for (const auto &t : ACCEPTED_SECTIONS) {
+    for (const auto &f : ACCEPTED_FLAGS) {
+      size_t segment_size{};
+      for (const auto &mod : modules) {
+        if (mod.section_headers.at(t).sh_flags == f) {
+          segment_size += mod.sections.at(t).size();
+        }
+      }
+      if (segment_size == 0)
+        continue;
+
+      elf::Block b{};
+      b.reserve(segment_size);
+      for (const auto &mod : modules) {
+        if (mod.section_headers.at(t).sh_flags == f) {
+          b.insert(b.end(), mod.sections.at(t).begin(),
+                   mod.sections.at(t).end());
+        }
+      }
+      bool re = f & PF_R;
+      bool wr = f & PF_W;
+      bool ex = f & PF_X;
+      e.segments.emplace(
+          t, Segment{std::move(b), 0, b.size(), 0, re, false, ex, wr});
+    }
+  }
+}
+
+std::vector<char> padding(size_t offset) {
+  std::vector<char> p{};
+  // offset % 4096 = 12
+  // 4096 - (offset % 4096)
+  size_t to_pad = TOLD_PAGE_SIZE - (offset % TOLD_PAGE_SIZE);
+  p.reserve(to_pad);
+  std::memset(reinterpret_cast<void *> p, '\0', to_pad);
+  return p;
+}
+
+void apply_addrs_and_adjustments(Executable &e) {
+  // adjust the size of the header segment
+  e.segments.at(elf::SectionType::Header).size =
+      sizeof(elf::ElfHeader) +
+      (e.segments.size() * sizeof(elf::ElfProgramHeaders));
+
+  size_t addr{e.segments.at(elf::SectionType::Header).start_addr};
+  for (const auto &t : ACCEPTED_SECTIONS) {
+    for (const auto &f : ACCEPTED_FLAGS) {
+      // TODO: this thing needs to be implemented!
+    }
+  }
+}
+
+Executable init_exec(std::string &&output_path) {
+  Executable e{};
+  e.path = std::move(output_path);
+  elf::Block empty{};
+  e.segments.emplace(elf::SectionType::Header,
+                     Segment{std::move(empty), TOLD_START_ADDR, 0, 0, true,
+                             false, false, false});
+
+  return e;
+}
+
 Executable convert_obj_to_exec(const std::vector<elf::ElfBinary> &modules) {
-  Executable exec{};
-  // TODO: this should not be hardcoded.
-  exec.path = "a.told";
-
-  // handle .text segments
-  uint64_t text_segment_size{};
-  for (const auto &mod : modules) {
-    const elf::ElfSectionHeader &text_sh = mod.section_headers.at(".text");
-
-    assert((text_sh.sh_flags & SHF_ALLOC) &&
-           (text_sh.sh_flags & SHF_EXECINSTR));
-    text_segment_size += text_sh.sh_size;
-  }
-
-  Segment text_sg = {TOLD_START_ADDR + TOLD_PAGE_SIZE, text_segment_size, true,
-                     true};
-  exec.segments.emplace(".text", std::move(text_sg));
-
-  // write the text section addresses
-  for (const auto &mod : modules) {
-    elf::ElfSectionHeader text_sh = mod.section_headers.at(".text");
-    // TODO: this is not generally correct - we need to assign this start addr
-    //       to the actual program entrypoint (e.g. _start for minimal.c)
-    //       For now, I am going to just optimize for having minimal.c run as
-    //       executable.
-    text_sh.sh_addr = text_sg.start_addr;
-  }
-
-  // TODO: handle .data segments
-  // TODO: handle .bss segments
-  // TODO: handle .symtab segments
-  // TODO: handle .eh_frame segments
-  // TODO: handle .comment segments
-
-  uint64_t num_segments = exec.segments.size() + 1;
-  uint64_t header_size =
-      sizeof(elf::ElfHeader) + num_segments * sizeof(elf::ElfProgramHeader);
-
-  Segment header_sg = {TOLD_START_ADDR, header_size, true, false};
-  exec.segments.emplace("_first", std::move(header_sg));
-
+  Executable exec = init_exec("a.told");
+  merge_sections(exec, modules);
+  apply_addrs_and_adjustments(exec);
   return exec;
 }
 
@@ -104,7 +144,7 @@ void write_out(const Executable &exec,
   // TODO: should not be hardcoded, but maybe it's good enough for a while.
   eh.e_entry = TOLD_START_ADDR + TOLD_PAGE_SIZE;
   // TODO: fill this out with a proper value
-  eh.e_phoff = sizeof(elf::ElfHeader);  // TODO: is this correct?
+  eh.e_phoff = sizeof(elf::ElfHeader); // TODO: is this correct?
   // TODO: fill this out with a proper value
   eh.e_shoff = 0;
   // TODO: fill this out with a proper value
@@ -128,13 +168,14 @@ void write_out(const Executable &exec,
   for (const auto &sg : exec.segments) {
     elf::ElfProgramHeader ph{};
     ph.p_type =
-        sg.second.loadable ? PT_LOAD : PT_NULL;  // TODO: this feels .. wrong..
+        sg.second.loadable ? PT_LOAD : PT_NULL; // TODO: this feels .. wrong..
     ph.p_flags = sg.second.executable ? PF_X : 0;
     ph.p_flags = ph.p_flags | PF_R;
     // TODO: fill this out with a proper value, for instance, a segment can be
-    // bigger than
-    //       just one page.
-    ph.p_offset = sg.first == "_first" ? 0 : page_header_i * TOLD_PAGE_SIZE;
+    // bigger than just one page.
+    ph.p_offset = sg.first == elf::SectionType::Header
+                      ? 0
+                      : page_header_i * TOLD_PAGE_SIZE;
     ph.p_vaddr = sg.second.start_addr;
     ph.p_paddr = sg.second.start_addr;
     ph.p_filesz = sg.second.size;
@@ -168,7 +209,7 @@ void write_out(const Executable &exec,
     //       that should be handled in the elf parser logic.
     for (const auto &mod : modules) {
       w_ptr = 0;
-      std::vector<char> text_sg = mod.sections.at(".text");
+      elf::Block text_sg = mod.sections.at(elf::SectionType::Text);
       w_ptr += text_sg.size();
       output_exec.write(reinterpret_cast<char *>(text_sg.data()),
                         text_sg.size());
@@ -179,4 +220,4 @@ void write_out(const Executable &exec,
   }
 }
 
-}  // namespace told
+} // namespace told

@@ -15,6 +15,15 @@ namespace fs = std::filesystem;
 
 namespace elf {
 
+SectionType s_type_from_name(const std::string &n) {
+  if (n == ".text") {
+    return SectionType::Text;
+  } else if (n == ".data") {
+    return SectionType::Data;
+  }
+  return SectionType::None;
+}
+
 ElfBinary parse_object(const std::string &file_path) {
   const fs::path obj_path{file_path};
   assert(fs::exists(obj_path) && "Input object file needs to exist");
@@ -40,32 +49,32 @@ ElfBinary parse_object(const std::string &file_path) {
                   sizeof(ElfSectionHeader));
   }
 
-  std::unordered_map<std::string, ElfSectionHeader> section_headers_with_name{};
-  section_headers_with_name.reserve(s_headers.size());
+  std::unordered_map<SectionType, ElfSectionHeader>
+      section_headers_with_types{};
+  section_headers_with_types.reserve(s_headers.size());
 
   uint64_t shstr_offset = s_headers[module.elf_header.e_shstrndx].sh_offset;
   for (int i = 0; i < s_headers.size(); ++i) {
     std::string name{};
     obj_file.seekg(shstr_offset + s_headers[i].sh_name);
     std::getline(obj_file, name, '\0');
-    section_headers_with_name.emplace(name, s_headers[i]);
+    section_headers_with_types.emplace(s_type_from_name(name), s_headers[i]);
   }
 
-  module.section_headers = std::move(section_headers_with_name);
+  module.section_headers = std::move(section_headers_with_types);
 
-  std::unordered_map<std::string, std::vector<char>> sections_with_names;
-  sections_with_names.reserve(s_headers.size());
+  std::unordered_map<SectionType, std::vector<char>> sections_with_types;
+  sections_with_types.reserve(s_headers.size());
   for (const auto &sh : module.section_headers) {
     std::vector<char> section_data_buffer(sh.second.sh_size);
-    // section_data_buffer.reserve(sh.second.sh_size);
 
     obj_file.seekg(sh.second.sh_offset);
     obj_file.read(section_data_buffer.data(), sh.second.sh_size);
 
-    sections_with_names.emplace(sh.first, std::move(section_data_buffer));
+    sections_with_types.emplace(sh.first, std::move(section_data_buffer));
   }
 
-  module.sections = std::move(sections_with_names);
+  module.sections = std::move(sections_with_types);
   return module;
 }
 
@@ -84,4 +93,4 @@ void assert_expected_elf_header(const ElfHeader &elf_header) {
   // TODO - add more constraints if necessary
 }
 
-}  // namespace elf
+} // namespace elf
