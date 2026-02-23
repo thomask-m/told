@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "elf_util.h"
+#include "elf_utils.h"
 
 // Default linker script specifies this as the executable start.
 // Reminder: you can look at the default script by running ld --verbose

@@ -30,18 +30,19 @@ void print_usage() {
 }
 
 void make_executable() {
-  fs::path binary {"a.told"};
+  fs::path binary{"a.told"};
   if (fs::exists(binary)) {
-    std::cout << "told: -- making binary executable" << std::endl;;
+    std::cout << "told: -- making binary executable" << std::endl;
     fs::permissions(binary, fs::perms::all ^ fs::perms::others_write);
   }
 }
 
-// g++ main.cc elf_util.cc -o main --std=c++17 && ./main ../data/basic_main.o
-// ../data/add.o
+// cd ../build && cmake -DCMAKE_BUILD_TYPE=Debug .. && cmake --build . &&
+// bin/told ../data/minimal.o && ./a.told
 int main(int argc, char *argv[]) {
   if (argc == 1) {
     print_usage();
+    exit(1);
   }
 
   // Takes some filepaths that are supposed to be elf binaries and attempt to
