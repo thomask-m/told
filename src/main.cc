@@ -25,7 +25,7 @@
 namespace fs = std::filesystem;
 
 void print_usage() {
-  std::cerr << "Usage --\n";
+  std::cerr << "told: usage --\n";
   std::cerr << "  ./told FILE1 .. FILEN\n";
 }
 
@@ -33,7 +33,9 @@ void make_executable() {
   fs::path binary{"a.told"};
   if (fs::exists(binary)) {
     std::cout << "told: -- making binary executable" << std::endl;
+    std::cout << "told: -- writing to a.told..." << std::endl;
     fs::permissions(binary, fs::perms::all ^ fs::perms::others_write);
+    std::cout << "told: -- Done!" << std::endl;
   }
 }
 
