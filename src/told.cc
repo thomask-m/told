@@ -65,11 +65,11 @@ void merge_sections(Executable &e, const std::vector<elf::ElfBinary> &modules) {
       bool alloc = f & SHF_ALLOC;
       bool ex = f & SHF_EXECINSTR;
       size_t bsz = b.size();
-      e.segments.emplace(t,
-                         Segment{std::move(b) /* block */, 0 /* start_addr */,
-                                 bsz /* size */, 0 /* relative_offset */,
-                                 true /* readable*/, false /* loadable */,
-                                 ex /* executable */, wr /* writable */});
+      Segment s{std::move(b) /* block */, 0 /* start_addr */,
+                bsz /* size */,           0 /* relative_offset */,
+                true /* readable*/,       false /* loadable */,
+                ex /* executable */,      wr /* writable */};
+      e.segments.emplace(t, s);
     }
   }
 }
@@ -95,7 +95,6 @@ std::optional<std::vector<char>> padding(size_t offset) {
 }
 
 void apply_addrs_and_adjustments(Executable &e) {
-  // adjust the size of the header segment
   Segment &e_header = e.segments.at(elf::SectionType::Header);
   e_header.size = sizeof(elf::ElfHeader) +
                   (e.segments.size() * sizeof(elf::ElfProgramHeader));
@@ -146,21 +145,16 @@ elf::ElfHeader default_elf_header() {
   eh.e_version = EV_CURRENT;
   // TODO: should not be hardcoded, but maybe it's good enough for a while.
   eh.e_entry = TOLD_START_ADDR + TOLD_PAGE_SIZE;
-  // TODO: fill this out with a proper value
-  eh.e_phoff = sizeof(elf::ElfHeader); // TODO: is this correct?
-  // TODO: fill this out with a proper value
+  eh.e_phoff = sizeof(elf::ElfHeader);
+  // TODO: implement these when section headers are added.
+  eh.e_shnum = 0;
   eh.e_shoff = 0;
   // TODO: fill this out with a proper value
   eh.e_flags = 0;
   eh.e_ehsize = sizeof(elf::ElfHeader);
-  // TODO: verify that this is the right number.
   eh.e_phentsize = sizeof(elf::ElfProgramHeader);
   eh.e_phnum = 0;
-  // TODO: verify that this is the right number.
   eh.e_shentsize = sizeof(elf::ElfSectionHeader);
-  // TODO: should not be hardcoded, needs to match the number of merged sections
-  //       from all the input modules.
-  eh.e_shnum = 0;
   // TODO: for now, i am not gonna care about symbols, but this is needed later.
   eh.e_shstrndx = SHN_UNDEF;
   return eh;
@@ -171,8 +165,6 @@ elf::ElfProgramHeader convert_to_ph(const Segment &sg) {
   ph.p_type = sg.loadable ? PT_LOAD : PT_NULL; // TODO: this feels .. wrong..
   ph.p_flags = sg.executable ? PF_X : 0;
   ph.p_flags = ph.p_flags | PF_R;
-  // TODO: fill this out with a proper value, for instance, a segment can be
-  // bigger than just one page.
   ph.p_offset = 0;
   ph.p_vaddr = sg.start_addr;
   ph.p_paddr = sg.start_addr;
@@ -180,6 +172,41 @@ elf::ElfProgramHeader convert_to_ph(const Segment &sg) {
   ph.p_memsz = sg.size;
   ph.p_align = TOLD_PAGE_SIZE;
   return ph;
+}
+
+void write_to_fs(elf::ElfHeader &&eh, std::vector<elf::ElfProgramHeader> &&phs,
+                 const Executable &exec) {
+  std::ofstream output_exec(exec.path, std::ios::binary);
+  uint32_t w_ptr{};
+  if (!output_exec.is_open()) {
+    std::cerr << "Output exec file is not open before writing\n";
+    exit(1);
+  }
+
+  output_exec.write(reinterpret_cast<char *>(&eh), sizeof(elf::ElfHeader));
+  w_ptr += sizeof(elf::ElfHeader);
+  for (elf::ElfProgramHeader &ph : phs) {
+    output_exec.write(reinterpret_cast<char *>(&ph),
+                      sizeof(elf::ElfProgramHeader));
+    w_ptr += sizeof(elf::ElfProgramHeader);
+  }
+
+  // TODO: write out section headers
+  // TODO: write out symbol table
+
+  std::optional<std::vector<char>> pad = padding(w_ptr);
+  if (pad.has_value())
+    output_exec.write(pad.value().data(), pad.value().size());
+  for (const auto &t : ACCEPTED_SECTIONS) {
+    w_ptr = 0;
+    elf::Block s_block = exec.segments.at(t).block;
+    w_ptr += s_block.size();
+    output_exec.write(reinterpret_cast<char *>(s_block.data()), s_block.size());
+
+    pad = padding(w_ptr);
+    if (pad.has_value())
+      output_exec.write(pad.value().data(), pad.value().size());
+  }
 }
 
 void write_out(const Executable &exec) {
@@ -199,34 +226,7 @@ void write_out(const Executable &exec) {
   }
 
   if (TRULY_WRITE_EXEC_FILE) {
-    std::ofstream output_exec(exec.path, std::ios::binary);
-    uint32_t w_ptr{};
-    if (!output_exec.is_open()) {
-      std::cerr << "Output exec file is not open before writing\n";
-      exit(1);
-    }
-    output_exec.write(reinterpret_cast<char *>(&eh), sizeof(elf::ElfHeader));
-    w_ptr += sizeof(elf::ElfHeader);
-    for (elf::ElfProgramHeader &ph : p_headers) {
-      output_exec.write(reinterpret_cast<char *>(&ph),
-                        sizeof(elf::ElfProgramHeader));
-      w_ptr += sizeof(elf::ElfProgramHeader);
-    }
-
-    std::optional<std::vector<char>> pad = padding(w_ptr);
-    if (pad.has_value())
-      output_exec.write(pad.value().data(), pad.value().size());
-    for (const auto &t : ACCEPTED_SECTIONS) {
-      w_ptr = 0;
-      elf::Block s_block = exec.segments.at(t).block;
-      w_ptr += s_block.size();
-      output_exec.write(reinterpret_cast<char *>(s_block.data()),
-                        s_block.size());
-
-      pad = padding(w_ptr);
-      if (pad.has_value())
-        output_exec.write(pad.value().data(), pad.value().size());
-    }
+    write_to_fs(std::move(eh), std::move(p_headers), exec);
   }
 }
 
