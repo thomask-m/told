@@ -62,7 +62,8 @@ void merge_sections(Executable &e, const std::vector<elf::ElfBinary> &modules) {
       }
 
       bool wr = f & SHF_WRITE;
-      bool alloc = f & SHF_ALLOC;
+      // TODO: figure out the significance of alloc flag.
+      // bool alloc = f & SHF_ALLOC;
       bool ex = f & SHF_EXECINSTR;
       size_t bsz = b.size();
       Segment s{std::move(b) /* block */, 0 /* start_addr */,
@@ -103,13 +104,11 @@ void apply_addrs_and_adjustments(Executable &e) {
   size_t addr{e.segments.at(elf::SectionType::Header).start_addr +
               e.segments.at(elf::SectionType::Header).size};
   for (const auto &t : ACCEPTED_SECTIONS) {
-    for (const auto &f : ACCEPTED_FLAGS) {
-      Segment &s = e.segments.at(t);
-      s.loadable = LOADABLE_SECTIONS.find(t) != LOADABLE_SECTIONS.end();
-      addr += padding_sz(addr);
-      s.start_addr = addr;
-      addr += s.size;
-    }
+    Segment &s = e.segments.at(t);
+    s.loadable = LOADABLE_SECTIONS.find(t) != LOADABLE_SECTIONS.end();
+    addr += padding_sz(addr);
+    s.start_addr = addr;
+    addr += s.size;
   }
 }
 
@@ -177,7 +176,7 @@ elf::ElfProgramHeader convert_to_ph(const Segment &sg) {
 void write_to_fs(elf::ElfHeader &&eh, std::vector<elf::ElfProgramHeader> &&phs,
                  const Executable &exec) {
   std::ofstream output_exec(exec.path, std::ios::binary);
-  uint32_t w_ptr{};
+  size_t w_ptr{};
   if (!output_exec.is_open()) {
     std::cerr << "Output exec file is not open before writing\n";
     exit(1);
@@ -211,7 +210,7 @@ void write_to_fs(elf::ElfHeader &&eh, std::vector<elf::ElfProgramHeader> &&phs,
 
 void write_out(const Executable &exec) {
   elf::ElfHeader eh{default_elf_header()};
-  eh.e_phnum = exec.segments.size();
+  eh.e_phnum = static_cast<elf::Elf64_Half>(exec.segments.size());
 
   std::vector<elf::ElfProgramHeader> p_headers{};
   p_headers.reserve(exec.segments.size());

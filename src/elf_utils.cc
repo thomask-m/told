@@ -44,7 +44,7 @@ ElfBinary parse_object(const std::string &file_path) {
 
   obj_file.seekg(module.elf_header.e_shoff);
   std::vector<ElfSectionHeader> s_headers(module.elf_header.e_shnum);
-  for (int i = 0; i < module.elf_header.e_shnum; ++i) {
+  for (size_t i = 0; i < module.elf_header.e_shnum; ++i) {
     obj_file.read(reinterpret_cast<char *>(&s_headers[i]),
                   sizeof(ElfSectionHeader));
   }
@@ -54,7 +54,7 @@ ElfBinary parse_object(const std::string &file_path) {
   section_headers_with_types.reserve(s_headers.size());
 
   uint64_t shstr_offset = s_headers[module.elf_header.e_shstrndx].sh_offset;
-  for (int i = 0; i < s_headers.size(); ++i) {
+  for (size_t i = 0; i < s_headers.size(); ++i) {
     std::string name{};
     obj_file.seekg(shstr_offset + s_headers[i].sh_name);
     std::getline(obj_file, name, '\0');
