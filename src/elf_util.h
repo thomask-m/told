@@ -59,7 +59,7 @@ typedef uint64_t Elf64_Addr;
 typedef uint64_t Elf64_Off;
 
 typedef std::vector<char> Block;
-
+  
 enum class SectionType { None, Text, Data, Header };
 
 SectionType s_type_from_name(const std::string &n);

@@ -36,7 +36,6 @@ elf::ElfBinary parse_object(const std::string &file_path);
 
 Executable convert_obj_to_exec(const std::vector<elf::ElfBinary> &modules);
 
-void write_out(const Executable &exec,
-               const std::vector<elf::ElfBinary> &modules);
+void write_out(const Executable &exec);
 
 } // namespace told

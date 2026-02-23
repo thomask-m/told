@@ -43,5 +43,5 @@ int main(int argc, char *argv[]) {
   }
 
   auto e = told::convert_obj_to_exec(modules);
-  write_out(e, modules);
+  write_out(e);
 }
