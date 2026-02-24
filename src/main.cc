@@ -29,11 +29,10 @@ void print_usage() {
   std::cerr << "  ./told FILE1 .. FILEN\n";
 }
 
-void make_executable() {
-  fs::path binary{"a.told"};
+void chmod_executable(told::Executable &e) {
+  fs::path binary{e.path};
   if (fs::exists(binary)) {
-    std::cout << "told: -- making binary executable" << std::endl;
-    std::cout << "told: -- writing to a.told..." << std::endl;
+    std::cout << "told: -- chmod-ing " << binary << "..." << std::endl;
     fs::permissions(binary, fs::perms::all ^ fs::perms::others_write);
     std::cout << "told: -- Done!" << std::endl;
   }
@@ -56,7 +55,8 @@ int main(int argc, char *argv[]) {
     modules.push_back(std::move(module));
   }
 
-  auto e = told::convert_obj_to_exec(modules);
+  std::cout << "told: -- Beginning linking process...\n";
+  told::Executable e = told::link(std::move(modules));
   told::write_out(e);
-  make_executable();
+  chmod_executable(e);
 }

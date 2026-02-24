@@ -84,12 +84,15 @@ void parse_symbol_table(ElfBinary &module) {
     ElfSymbolTableEntry ste{};
     obj_file.read(reinterpret_cast<char *>(&ste), sizeof(ElfSymbolTableEntry));
     // std::cout << "symbol table st_name: " << ste.st_name << std::endl;
-    std::cout << "symbol table st_bind: " << ELF64_ST_BIND(ste.st_info)
-              << " st_type: " << ELF64_ST_TYPE(ste.st_info) << std::endl;
     obj_file.seekg(str_table_header.sh_offset + ste.st_name);
     Symbol s_name{};
     std::getline(obj_file, s_name, '\0');
-    std::cout << "symbol table name: " << s_name << std::endl;
+    if (!s_name.empty()) {
+      // std::cout << "symbol table name: " << s_name << std::endl;
+      // std::cout << "  symbol table st_bind: " << ELF64_ST_BIND(ste.st_info)
+      //           << " st_type: " << ELF64_ST_TYPE(ste.st_info) << std::endl;
+      sym_table.emplace(std::move(s_name), std::move(ste));
+    }
   }
   module.symbol_table = std::move(sym_table);
 }

@@ -33,11 +33,11 @@ elf::ElfBinary parse_object(const std::string &file_path) {
   return elf::parse_object(file_path);
 }
 
-void merge_sections(Executable &e, const std::vector<elf::ElfBinary> &modules) {
+void merge_sections(Executable &e) {
   for (const auto &t : ACCEPTED_SECTIONS) {
     for (auto f : ACCEPTED_FLAGS) {
       size_t segment_size{};
-      for (const auto &mod : modules) {
+      for (const auto &mod : e.input_modules) {
         if (mod.section_headers.at(t).sh_flags == f) {
           segment_size += mod.sections.at(t).size();
         }
@@ -48,7 +48,7 @@ void merge_sections(Executable &e, const std::vector<elf::ElfBinary> &modules) {
       elf::Block b{};
       b.reserve(segment_size);
       bool filled = false;
-      for (const auto &mod : modules) {
+      for (const auto &mod : e.input_modules) {
         if (mod.section_headers.at(t).sh_flags == f) {
           b.insert(b.end(), mod.sections.at(t).begin(),
                    mod.sections.at(t).end());
@@ -75,9 +75,52 @@ void merge_sections(Executable &e, const std::vector<elf::ElfBinary> &modules) {
   }
 }
 
+void assert_no_undefined_symbols(
+    const std::unordered_map<elf::Symbol, elf::ElfSymbolTableEntry> &g_sym) {
+  for (const auto &sym_entry : g_sym) {
+    elf::Symbol sym = sym_entry.first;
+    elf::ElfSymbolTableEntry entry = sym_entry.second;
+    assert(ELF64_ST_TYPE(entry.st_info) != STT_NOTYPE &&
+           "Undefined global symbols");
+  }
+}
+
+void resolve_symbols(Executable &e) {
+  // first, let's fill in the global symbol table
+  std::unordered_map<elf::Symbol, elf::ElfSymbolTableEntry> g_sym{};
+  for (const auto &mod : e.input_modules) {
+    for (const auto &entry : mod.symbol_table) {
+      elf::Symbol sym = entry.first;
+      elf::ElfSymbolTableEntry curr_entry = entry.second;
+      std::cout << "info about symbol table entry: "
+                << ELF64_ST_BIND(curr_entry.st_info) << std::endl;
+      if (ELF64_ST_BIND(curr_entry.st_info) == STB_GLOBAL) {
+        if (auto e = g_sym.find(sym); e != g_sym.end()) {
+          // symbol is already found in the global symbol table.
+          // we need to check if it's already defined.
+          elf::ElfSymbolTableEntry existing_entry = e->second;
+          if (ELF64_ST_TYPE(curr_entry.st_info) != STT_NOTYPE) {
+            assert(ELF64_ST_TYPE(existing_entry.st_info) == STT_NOTYPE &&
+                   "Multiple definitions defined for a symbol");
+          } else {
+            // the current symbol we're processing is not defined. we check
+            // later if there are undefined symbols, in the second pass.
+          }
+        } else {
+          std::cout << "  Adding symbol to global symbol table: " << sym
+                    << std::endl;
+          g_sym.emplace(sym, curr_entry);
+        }
+      }
+    }
+  }
+
+  assert_no_undefined_symbols(g_sym);
+
+  e.g_symbol_table = std::move(g_sym);
+}
+
 size_t padding_sz(size_t offset) {
-  // offset % 4096 = 12
-  // 4096 - (offset % 4096)
   size_t alignment = offset % TOLD_PAGE_SIZE;
   if (alignment == 0)
     return 0;
@@ -112,8 +155,10 @@ void apply_addrs_and_adjustments(Executable &e) {
   }
 }
 
-Executable init_exec(std::string &&output_path) {
+Executable init_exec(std::string &&output_path,
+                     std::vector<elf::ElfBinary> &&modules) {
   Executable e{};
+  e.input_modules = std::move(modules);
   e.path = std::move(output_path);
   elf::Block empty{};
   e.segments.emplace(elf::SectionType::Header,
@@ -122,9 +167,10 @@ Executable init_exec(std::string &&output_path) {
   return e;
 }
 
-Executable convert_obj_to_exec(const std::vector<elf::ElfBinary> &modules) {
-  Executable exec = init_exec("a.told");
-  merge_sections(exec, modules);
+Executable link(std::vector<elf::ElfBinary> &&modules) {
+  Executable exec = init_exec("a.told", std::move(modules));
+  merge_sections(exec);
+  resolve_symbols(exec);
   apply_addrs_and_adjustments(exec);
   return exec;
 }
