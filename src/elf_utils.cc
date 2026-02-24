@@ -28,23 +28,8 @@ SectionType s_type_from_name(const std::string &n) {
   return SectionType::None;
 }
 
-ElfBinary parse_object(const std::string &file_path) {
-  const fs::path obj_path{file_path};
-  assert(fs::exists(obj_path) && "Input object file needs to exist");
-
-  fs::path canonicalized_path = fs::canonical(obj_path);
-  ElfBinary module{canonicalized_path};
-  std::ifstream obj_file{obj_path, std::ios::binary};
-  // N.B. - ifstream read doesn't actually handle endianness, it just
-  //        reads the bytes in the order they're stored and interprets
-  //        based on native endianness (so in this case, since I'm
-  //        mostly testing this code on my debian x64 machine, it just
-  //        so happens that it interprets the bytes in the way that I
-  //        want).
-  //        For the purposes of this toy linker - this is okay.
-  obj_file.read(reinterpret_cast<char *>(&module.elf_header),
-                sizeof(ElfHeader));
-  assert_expected_elf_header(module.elf_header);
+void parse_section_headers(ElfBinary &module) {
+  std::ifstream obj_file{module.given_path, std::ios::binary};
 
   obj_file.seekg(module.elf_header.e_shoff);
   std::vector<ElfSectionHeader> s_headers(module.elf_header.e_shnum);
@@ -56,7 +41,6 @@ ElfBinary parse_object(const std::string &file_path) {
   std::unordered_map<SectionType, ElfSectionHeader>
       section_headers_with_types{};
   section_headers_with_types.reserve(s_headers.size());
-
   uint64_t shstr_offset = s_headers[module.elf_header.e_shstrndx].sh_offset;
   for (size_t i = 0; i < s_headers.size(); ++i) {
     std::string name{};
@@ -67,21 +51,27 @@ ElfBinary parse_object(const std::string &file_path) {
   }
 
   module.section_headers = std::move(section_headers_with_types);
+}
 
-  std::unordered_map<SectionType, std::vector<char>> sections_with_types;
-  sections_with_types.reserve(s_headers.size());
+void parse_block_sections(ElfBinary &module) {
+  std::ifstream obj_file{module.given_path, std::ios::binary};
+
+  std::unordered_map<SectionType, Block> sections_with_types;
+  sections_with_types.reserve(module.section_headers.size());
   for (const auto &sh : module.section_headers) {
     if (sh.first != SectionType::Text) // are there other sections are basically
                                        // just blocks of data?
       continue;
-    std::vector<char> section_data_buffer(sh.second.sh_size);
-
+    Block section_data_buffer(sh.second.sh_size);
     obj_file.seekg(sh.second.sh_offset);
     obj_file.read(section_data_buffer.data(), sh.second.sh_size);
-
     sections_with_types.emplace(sh.first, std::move(section_data_buffer));
   }
   module.sections = std::move(sections_with_types);
+}
+
+void parse_symbol_table(ElfBinary &module) {
+  std::ifstream obj_file{module.given_path, std::ios::binary};
 
   std::unordered_map<Symbol, ElfSymbolTableEntry> sym_table;
   ElfSectionHeader sym_table_header =
@@ -102,6 +92,29 @@ ElfBinary parse_object(const std::string &file_path) {
     std::cout << "symbol table name: " << s_name << std::endl;
   }
   module.symbol_table = std::move(sym_table);
+}
+
+ElfBinary parse_object(const std::string &file_path) {
+  const fs::path obj_path{file_path};
+  assert(fs::exists(obj_path) && "Input object file needs to exist");
+
+  fs::path canonicalized_path = fs::canonical(obj_path);
+  ElfBinary module{canonicalized_path};
+  std::ifstream obj_file{module.given_path, std::ios::binary};
+  // N.B. - ifstream read doesn't actually handle endianness, it just
+  //        reads the bytes in the order they're stored and interprets
+  //        based on native endianness (so in this case, since I'm
+  //        mostly testing this code on my debian x64 machine, it just
+  //        so happens that it interprets the bytes in the way that I
+  //        want).
+  //        For the purposes of this toy linker - this is okay.
+  obj_file.read(reinterpret_cast<char *>(&module.elf_header),
+                sizeof(ElfHeader));
+  assert_expected_elf_header(module.elf_header);
+
+  parse_section_headers(module);
+  parse_block_sections(module);
+  parse_symbol_table(module);
   return module;
 }
 
