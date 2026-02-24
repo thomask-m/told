@@ -20,6 +20,10 @@ SectionType s_type_from_name(const std::string &n) {
     return SectionType::Text;
   } else if (n == ".data") {
     return SectionType::Data;
+  } else if (n == ".symtab") {
+    return SectionType::SymTable;
+  } else if (n == ".strtab") {
+    return SectionType::StrTable;
   }
   return SectionType::None;
 }
@@ -58,6 +62,7 @@ ElfBinary parse_object(const std::string &file_path) {
     std::string name{};
     obj_file.seekg(shstr_offset + s_headers[i].sh_name);
     std::getline(obj_file, name, '\0');
+    // std::cout << "section name: " << name << std::endl;
     section_headers_with_types.emplace(s_type_from_name(name), s_headers[i]);
   }
 
@@ -66,6 +71,9 @@ ElfBinary parse_object(const std::string &file_path) {
   std::unordered_map<SectionType, std::vector<char>> sections_with_types;
   sections_with_types.reserve(s_headers.size());
   for (const auto &sh : module.section_headers) {
+    if (sh.first != SectionType::Text) // are there other sections are basically
+                                       // just blocks of data?
+      continue;
     std::vector<char> section_data_buffer(sh.second.sh_size);
 
     obj_file.seekg(sh.second.sh_offset);
@@ -73,8 +81,27 @@ ElfBinary parse_object(const std::string &file_path) {
 
     sections_with_types.emplace(sh.first, std::move(section_data_buffer));
   }
-
   module.sections = std::move(sections_with_types);
+
+  std::unordered_map<Symbol, ElfSymbolTableEntry> sym_table;
+  ElfSectionHeader sym_table_header =
+      module.section_headers.at(SectionType::SymTable);
+  ElfSectionHeader str_table_header =
+      module.section_headers.at(SectionType::StrTable);
+  for (size_t i = 0; i < sym_table_header.sh_size;
+       i += sym_table_header.sh_entsize) {
+    obj_file.seekg(sym_table_header.sh_offset + i);
+    ElfSymbolTableEntry ste{};
+    obj_file.read(reinterpret_cast<char *>(&ste), sizeof(ElfSymbolTableEntry));
+    // std::cout << "symbol table st_name: " << ste.st_name << std::endl;
+    std::cout << "symbol table st_bind: " << ELF64_ST_BIND(ste.st_info)
+              << " st_type: " << ELF64_ST_TYPE(ste.st_info) << std::endl;
+    obj_file.seekg(str_table_header.sh_offset + ste.st_name);
+    Symbol s_name{};
+    std::getline(obj_file, s_name, '\0');
+    std::cout << "symbol table name: " << s_name << std::endl;
+  }
+  module.symbol_table = std::move(sym_table);
   return module;
 }
 

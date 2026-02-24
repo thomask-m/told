@@ -50,8 +50,45 @@
 #define PF_W (1 << 1) /* Segment is writable */
 #define PF_R (1 << 2) /* Segment is readable */
 
+/* How to extract and insert information held in the st_info field. */
+#define ELF32_ST_BIND(val) (((unsigned char)(val)) >> 4)
+#define ELF32_ST_TYPE(val) ((val) & 0xf)
+#define ELF32_ST_INFO(bind, type) (((bind) << 4) + ((type) & 0xf))
+
+/* Both Elf32_Sym and Elf64_Sym use the same one-byte st_info field. */
+#define ELF64_ST_BIND(val) ELF32_ST_BIND(val)
+#define ELF64_ST_TYPE(val) ELF32_ST_TYPE(val)
+#define ELF64_ST_INFO(bind, type) ELF32_ST_INFO((bind), (type))
+
+/* Legal values for ST_BIND subfield of st_info (symbol binding). */
+#define STB_LOCAL 0       /* Local symbol */
+#define STB_GLOBAL 1      /* Global symbol */
+#define STB_WEAK 2        /* Weak symbol */
+#define STB_NUM 3         /* Number of defined types. */
+#define STB_LOOS 10       /* Start of OS-specific */
+#define STB_GNU_UNIQUE 10 /* Unique symbol. */
+#define STB_HIOS 12       /* End of OS-specific */
+#define STB_LOPROC 13     /* Start of processor-specific */
+#define STB_HIPROC 15     /* End of processor-specific */
+
+/* Legal values for ST_TYPE subfield of st_info (symbol type). */
+#define STT_NOTYPE 0     /* Symbol type is unspecified */
+#define STT_OBJECT 1     /* Symbol is a data object */
+#define STT_FUNC 2       /* Symbol is a code object */
+#define STT_SECTION 3    /* Symbol associated with a section */
+#define STT_FILE 4       /* Symbol's name is file name */
+#define STT_COMMON 5     /* Symbol is a common data object */
+#define STT_TLS 6        /* Symbol is thread-local data object*/
+#define STT_NUM 7        /* Number of defined types. */
+#define STT_LOOS 10      /* Start of OS-specific */
+#define STT_GNU_IFUNC 10 /* Symbol is indirect code object */
+#define STT_HIOS 12      /* End of OS-specific */
+#define STT_LOPROC 13    /* Start of processor-specific */
+#define STT_HIPROC 15    /* End of processor-specific */
+
 namespace elf {
 
+typedef uint16_t Elf64_Section;
 typedef uint16_t Elf64_Half;
 typedef uint32_t Elf64_Word;
 typedef uint64_t Elf64_Xword;
@@ -59,8 +96,9 @@ typedef uint64_t Elf64_Addr;
 typedef uint64_t Elf64_Off;
 
 typedef std::vector<char> Block;
-  
-enum class SectionType { None, Text, Data, Header };
+typedef std::string Symbol;
+
+enum class SectionType { None, Text, Data, Header, SymTable, StrTable };
 
 SectionType s_type_from_name(const std::string &n);
 
@@ -105,10 +143,20 @@ struct ElfProgramHeader {
   Elf64_Xword p_align;  /* Segment alignment */
 };
 
+struct ElfSymbolTableEntry {
+  Elf64_Word st_name;     /* Symbol name (string tbl index) */
+  unsigned char st_info;  /* Symbol type and binding */
+  unsigned char st_other; /* Symbol visibility */
+  Elf64_Section st_shndx; /* Section index */
+  Elf64_Addr st_value;    /* Symbol value */
+  Elf64_Xword st_size;    /* Symbol size */
+};
+
 struct ElfBinary {
   ElfHeader elf_header;
   std::unordered_map<SectionType, ElfSectionHeader> section_headers;
   std::unordered_map<SectionType, Block> sections;
+  std::unordered_map<Symbol, ElfSymbolTableEntry> symbol_table;
   std::string given_path;
 
   ElfBinary(const std::string &given_path) : given_path(given_path) {}
