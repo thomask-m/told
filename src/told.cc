@@ -33,13 +33,23 @@ elf::ElfBinary parse_object(const std::string &file_path) {
   return elf::parse_object(file_path);
 }
 
+void compute_output_offsets(Executable &e) {
+  size_t offset{};
+  for (const auto &m : e.module_order) {
+    e.text_segment_offsets.emplace(m, offset);
+    elf::Block text_section =
+        e.input_modules.at(m).sections.at(elf::SectionType::Text);
+    offset += text_section.size();
+  }
+}
+
 void merge_sections(Executable &e) {
   for (const auto &t : ACCEPTED_SECTIONS) {
     for (auto f : ACCEPTED_FLAGS) {
       size_t segment_size{};
-      for (const auto &mod : e.input_modules) {
-        if (mod.section_headers.at(t).sh_flags == f) {
-          segment_size += mod.sections.at(t).size();
+      for (const auto &m : e.module_order) {
+        if (e.input_modules.at(m).section_headers.at(t).sh_flags == f) {
+          segment_size += e.input_modules.at(m).sections.at(t).size();
         }
       }
       if (segment_size == 0)
@@ -48,10 +58,10 @@ void merge_sections(Executable &e) {
       elf::Block b{};
       b.reserve(segment_size);
       bool filled = false;
-      for (const auto &mod : e.input_modules) {
-        if (mod.section_headers.at(t).sh_flags == f) {
-          b.insert(b.end(), mod.sections.at(t).begin(),
-                   mod.sections.at(t).end());
+      for (const auto &m : e.module_order) {
+        if (e.input_modules.at(m).section_headers.at(t).sh_flags == f) {
+          b.insert(b.end(), e.input_modules.at(m).sections.at(t).begin(),
+                   e.input_modules.at(m).sections.at(t).end());
           filled = true;
         }
       }
@@ -62,62 +72,61 @@ void merge_sections(Executable &e) {
       }
 
       bool wr = f & SHF_WRITE;
-      // TODO: figure out the significance of alloc flag.
-      // bool alloc = f & SHF_ALLOC;
+      bool alloc = f & SHF_ALLOC;
       bool ex = f & SHF_EXECINSTR;
       size_t bsz = b.size();
       Segment s{std::move(b) /* block */, 0 /* start_addr */,
                 bsz /* size */,           0 /* relative_offset */,
-                true /* readable*/,       false /* loadable */,
+                true /* readable*/,       alloc /* loadable */,
                 ex /* executable */,      wr /* writable */};
       e.segments.emplace(t, s);
     }
   }
 }
 
-void assert_no_undefined_symbols(
-    const std::unordered_map<elf::Symbol, elf::ElfSymbolTableEntry> &g_sym) {
-  for (const auto &sym_entry : g_sym) {
-    elf::Symbol sym = sym_entry.first;
-    elf::ElfSymbolTableEntry entry = sym_entry.second;
-    assert(ELF64_ST_TYPE(entry.st_info) != STT_NOTYPE &&
-           "Undefined global symbols");
-  }
-}
-
-void resolve_symbols(Executable &e) {
-  // first, let's fill in the global symbol table
-  std::unordered_map<elf::Symbol, elf::ElfSymbolTableEntry> g_sym{};
+void assert_no_undefined_global_symbols(const Executable &e) {
   for (const auto &mod : e.input_modules) {
-    for (const auto &entry : mod.symbol_table) {
+    for (const auto &entry : mod.second.symbol_table) {
       elf::Symbol sym = entry.first;
       elf::ElfSymbolTableEntry curr_entry = entry.second;
-      std::cout << "info about symbol table entry: "
-                << ELF64_ST_BIND(curr_entry.st_info) << std::endl;
-      if (ELF64_ST_BIND(curr_entry.st_info) == STB_GLOBAL) {
-        if (auto e = g_sym.find(sym); e != g_sym.end()) {
-          // symbol is already found in the global symbol table.
-          // we need to check if it's already defined.
-          elf::ElfSymbolTableEntry existing_entry = e->second;
-          if (ELF64_ST_TYPE(curr_entry.st_info) != STT_NOTYPE) {
-            assert(ELF64_ST_TYPE(existing_entry.st_info) == STT_NOTYPE &&
-                   "Multiple definitions defined for a symbol");
-          } else {
-            // the current symbol we're processing is not defined. we check
-            // later if there are undefined symbols, in the second pass.
-          }
-        } else {
-          std::cout << "  Adding symbol to global symbol table: " << sym
-                    << std::endl;
-          g_sym.emplace(sym, curr_entry);
-        }
+
+      if (ELF64_ST_BIND(curr_entry.st_info) == STB_GLOBAL &&
+          ELF64_ST_TYPE(curr_entry.st_info) == STT_NOTYPE) {
+        // e        auto defined_sym = e.g_symbol_table.find(sym);
+        //  std::cout << "defined g sym: " << defined_sym->first << " "
+        //            << defined_sym->second.def_module << std::endl;
+        assert(e.g_symbol_table.find(sym) != e.g_symbol_table.end() &&
+               "Global symbol is not defined");
       }
     }
   }
+}
 
-  assert_no_undefined_symbols(g_sym);
+void create_global_symtab(Executable &e) {
+  std::unordered_map<elf::Symbol, GlobalSymTableEntry> g_sym{};
+  for (const auto &mod : e.input_modules) {
+    for (const auto &entry : mod.second.symbol_table) {
+      const elf::Symbol &sym = entry.first;
+      const elf::ElfSymbolTableEntry &curr_entry = entry.second;
 
+      if (ELF64_ST_BIND(curr_entry.st_info) == STB_GLOBAL &&
+          ELF64_ST_TYPE(curr_entry.st_info) != STT_NOTYPE) {
+        assert(g_sym.find(sym) == g_sym.end() &&
+               "Multiple definitions for symbol found");
+        // TODO: it's not generally always the text type.
+        g_sym.emplace(sym, GlobalSymTableEntry{mod.first, curr_entry.st_value,
+                                               0, elf::SectionType::Text});
+      }
+    }
+  }
   e.g_symbol_table = std::move(g_sym);
+  assert_no_undefined_global_symbols(e);
+}
+
+void resolve_symbols(Executable &e) {
+  create_global_symtab(e);
+  assert(e.g_symbol_table.find(ENTRY_SYM) != e.g_symbol_table.end() &&
+         "_start entrypoint needs to exist");
 }
 
 size_t padding_sz(size_t offset) {
@@ -138,7 +147,7 @@ std::optional<std::vector<char>> padding(size_t offset) {
   return pad;
 }
 
-void apply_addrs_and_adjustments(Executable &e) {
+void apply_addrs_and_adjustments_to_segments(Executable &e) {
   Segment &e_header = e.segments.at(elf::SectionType::Header);
   e_header.size = sizeof(elf::ElfHeader) +
                   (e.segments.size() * sizeof(elf::ElfProgramHeader));
@@ -155,9 +164,46 @@ void apply_addrs_and_adjustments(Executable &e) {
   }
 }
 
-Executable init_exec(std::string &&output_path,
-                     std::vector<elf::ElfBinary> &&modules) {
+void apply_addrs_to_symbols(Executable &e) {
+  for (auto &g_sym : e.g_symbol_table) {
+    const std::string &mod = g_sym.second.def_module;
+    size_t offset{e.text_segment_offsets.at(mod)};
+    if (g_sym.second.type == elf::SectionType::Text) {
+      const Segment &sg = e.segments.at(elf::SectionType::Text);
+      g_sym.second.addr = offset + g_sym.second.value + sg.start_addr;
+    }
+  }
+}
+
+void update_block_content_with_reloc(std::vector<char> &block, size_t offset,
+                                     uint32_t addr) {
+  std::memcpy(&block[offset], &addr, sizeof(addr));
+}
+
+void apply_relocations(Executable &e) {
+  for (const auto &m : e.input_modules) {
+    for (const auto &reloc : m.second.rela_entries) {
+      const std::string &sym = reloc.first;
+      const auto rela_offset = reloc.second.r_offset;
+      const elf::Elf64_Addr sym_addr = e.g_symbol_table.at(sym).addr;
+      const size_t text_sg_start_addr =
+          e.segments.at(elf::SectionType::Text).start_addr;
+      const size_t text_sg_offset = e.text_segment_offsets.at(m.first);
+      size_t next_instr_addr =
+          text_sg_offset + text_sg_start_addr + rela_offset + 3;
+      uint32_t new_addr = static_cast<uint32_t>(sym_addr - next_instr_addr);
+      update_block_content_with_reloc(
+          e.segments.at(elf::SectionType::Text).block,
+          static_cast<size_t>(text_sg_offset + rela_offset), new_addr);
+    }
+  }
+}
+
+Executable
+init_exec(std::string &&output_path, std::vector<std::string> &&module_order,
+          std::unordered_map<std::string, elf::ElfBinary> &&modules) {
   Executable e{};
+  e.module_order = std::move(module_order);
   e.input_modules = std::move(modules);
   e.path = std::move(output_path);
   elf::Block empty{};
@@ -165,14 +211,6 @@ Executable init_exec(std::string &&output_path,
                      Segment{std::move(empty), TOLD_START_ADDR, 0, 0, true,
                              false, false, false});
   return e;
-}
-
-Executable link(std::vector<elf::ElfBinary> &&modules) {
-  Executable exec = init_exec("a.told", std::move(modules));
-  merge_sections(exec);
-  resolve_symbols(exec);
-  apply_addrs_and_adjustments(exec);
-  return exec;
 }
 
 elf::ElfHeader default_elf_header() {
@@ -188,7 +226,6 @@ elf::ElfHeader default_elf_header() {
   eh.e_type = ET_EXEC;
   eh.e_machine = EM_X86_64;
   eh.e_version = EV_CURRENT;
-  // TODO: should not be hardcoded, but maybe it's good enough for a while.
   eh.e_entry = TOLD_START_ADDR + TOLD_PAGE_SIZE;
   eh.e_phoff = sizeof(elf::ElfHeader);
   // TODO: implement these when section headers are added.
@@ -257,6 +294,7 @@ void write_to_fs(elf::ElfHeader &&eh, std::vector<elf::ElfProgramHeader> &&phs,
 void write_out(const Executable &exec) {
   elf::ElfHeader eh{default_elf_header()};
   eh.e_phnum = static_cast<elf::Elf64_Half>(exec.segments.size());
+  eh.e_entry = exec.g_symbol_table.at(ENTRY_SYM).addr;
 
   std::vector<elf::ElfProgramHeader> p_headers{};
   p_headers.reserve(exec.segments.size());
@@ -273,6 +311,19 @@ void write_out(const Executable &exec) {
   if (TRULY_WRITE_EXEC_FILE) {
     write_to_fs(std::move(eh), std::move(p_headers), exec);
   }
+}
+
+Executable link(std::vector<std::string> &&module_order,
+                std::unordered_map<std::string, elf::ElfBinary> &&modules) {
+  Executable exec =
+      init_exec("a.told", std::move(module_order), std::move(modules));
+  compute_output_offsets(exec);
+  resolve_symbols(exec);
+  merge_sections(exec);
+  apply_addrs_and_adjustments_to_segments(exec);
+  apply_addrs_to_symbols(exec);
+  apply_relocations(exec);
+  return exec;
 }
 
 } // namespace told

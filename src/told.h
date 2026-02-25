@@ -14,6 +14,8 @@
 // Standard page size is 4KB on x86-64
 #define TOLD_PAGE_SIZE (0x1000)
 
+inline const std::string ENTRY_SYM = "_start";
+
 namespace told {
 
 struct Segment {
@@ -27,16 +29,29 @@ struct Segment {
   bool writable;
 };
 
+struct GlobalSymTableEntry {
+  std::string def_module;
+  elf::Elf64_Addr value;
+  elf::Elf64_Addr addr;
+  elf::SectionType type;
+};
+
 struct Executable {
   std::string path;
-  std::vector<elf::ElfBinary> input_modules;
+  // contains names of input modules.
+  // TODO: these really should be canonicalized paths.
+  std::vector<std::string> module_order;
+  std::unordered_map<std::string, elf::ElfBinary> input_modules;
+  // maps modules to their offset in the output text segment
+  std::unordered_map<std::string, size_t> text_segment_offsets;
   std::unordered_map<elf::SectionType, Segment> segments;
-  std::unordered_map<elf::Symbol, elf::ElfSymbolTableEntry> g_symbol_table;
+  std::unordered_map<elf::Symbol, GlobalSymTableEntry> g_symbol_table;
 };
 
 elf::ElfBinary parse_object(const std::string &file_path);
 
-Executable link(std::vector<elf::ElfBinary> &&modules);
+Executable link(std::vector<std::string> &&module_order,
+                std::unordered_map<std::string, elf::ElfBinary> &&modules);
 
 void write_out(const Executable &exec);
 

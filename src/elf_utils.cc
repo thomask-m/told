@@ -16,6 +16,7 @@ namespace fs = std::filesystem;
 namespace elf {
 
 SectionType s_type_from_name(const std::string &n) {
+  // std::cout << "name of section header: " << n << std::endl;
   if (n == ".text") {
     return SectionType::Text;
   } else if (n == ".data") {
@@ -24,6 +25,8 @@ SectionType s_type_from_name(const std::string &n) {
     return SectionType::SymTable;
   } else if (n == ".strtab") {
     return SectionType::StrTable;
+  } else if (n == ".rela.text") {
+    return SectionType::Rela;
   }
   return SectionType::None;
 }
@@ -46,7 +49,6 @@ void parse_section_headers(ElfBinary &module) {
     std::string name{};
     obj_file.seekg(shstr_offset + s_headers[i].sh_name);
     std::getline(obj_file, name, '\0');
-    // std::cout << "section name: " << name << std::endl;
     section_headers_with_types.emplace(s_type_from_name(name), s_headers[i]);
   }
 
@@ -83,6 +85,7 @@ void parse_symbol_table(ElfBinary &module) {
     obj_file.seekg(sym_table_header.sh_offset + i);
     ElfSymbolTableEntry ste{};
     obj_file.read(reinterpret_cast<char *>(&ste), sizeof(ElfSymbolTableEntry));
+    module.symtab_entries.push_back(ste);
     // std::cout << "symbol table st_name: " << ste.st_name << std::endl;
     obj_file.seekg(str_table_header.sh_offset + ste.st_name);
     Symbol s_name{};
@@ -95,6 +98,34 @@ void parse_symbol_table(ElfBinary &module) {
     }
   }
   module.symbol_table = std::move(sym_table);
+}
+
+void parse_relocation_entries(ElfBinary &module) {
+  if (auto rela_section = module.section_headers.find(SectionType::Rela);
+      rela_section != module.section_headers.end()) {
+    std::ifstream obj_file{module.given_path, std::ios::binary};
+    std::unordered_map<Symbol, ElfRelocAddendEntry> rela_entries{};
+    ElfSectionHeader str_table_header =
+        module.section_headers.at(SectionType::StrTable);
+    for (size_t i = 0; i < rela_section->second.sh_size;
+         i += rela_section->second.sh_entsize) {
+      obj_file.seekg(rela_section->second.sh_offset + i);
+      ElfRelocAddendEntry reloc_add{};
+      obj_file.read(reinterpret_cast<char *>(&reloc_add),
+                    sizeof(ElfRelocAddendEntry));
+
+      // Search for symbol name. maybe there is a better way to organize
+      // ElfBinary to make this search more straighforward.
+      ElfSymbolTableEntry ste =
+          module.symtab_entries.at(ELF64_R_SYM(reloc_add.r_info));
+      obj_file.seekg(str_table_header.sh_offset + ste.st_name);
+      Symbol s_name{};
+      std::getline(obj_file, s_name, '\0');
+
+      rela_entries.emplace(std::move(s_name), std::move(reloc_add));
+    }
+    module.rela_entries = std::move(rela_entries);
+  }
 }
 
 ElfBinary parse_object(const std::string &file_path) {
@@ -118,6 +149,7 @@ ElfBinary parse_object(const std::string &file_path) {
   parse_section_headers(module);
   parse_block_sections(module);
   parse_symbol_table(module);
+  parse_relocation_entries(module);
   return module;
 }
 

@@ -48,15 +48,20 @@ int main(int argc, char *argv[]) {
 
   // Takes some filepaths that are supposed to be elf binaries and attempt to
   // link them into an executable
-  std::vector<elf::ElfBinary> modules{};
+  std::cout << "told: -- Parsing input object files...\n";
+  std::vector<std::string> module_order{};
+  module_order.reserve(argc - 1);
+  std::unordered_map<std::string, elf::ElfBinary> modules{};
   modules.reserve(argc - 1);
   for (int i = 1; i < argc; i++) {
     elf::ElfBinary module = told::parse_object(argv[i]);
-    modules.push_back(std::move(module));
+    // TODO: use the canonicalized path
+    modules.emplace(argv[i], std::move(module));
+    module_order.emplace_back(argv[i]);
   }
 
   std::cout << "told: -- Beginning linking process...\n";
-  told::Executable e = told::link(std::move(modules));
+  told::Executable e = told::link(std::move(module_order), std::move(modules));
   told::write_out(e);
   chmod_executable(e);
 }

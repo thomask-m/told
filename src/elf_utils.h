@@ -86,6 +86,21 @@
 #define STT_LOPROC 13    /* Start of processor-specific */
 #define STT_HIPROC 15    /* End of processor-specific */
 
+/* How to extract and insert information held in the r_info field. */
+#define ELF32_R_SYM(val) ((val) >> 8)
+#define ELF32_R_TYPE(val) ((val) & 0xff)
+#define ELF32_R_INFO(sym, type) (((sym) << 8) + ((type) & 0xff))
+
+#define ELF64_R_SYM(i) ((i) >> 32)
+#define ELF64_R_TYPE(i) ((i) & 0xffffffff)
+#define ELF64_R_INFO(sym, type) ((((Elf64_Xword)(sym)) << 32) + (type))
+
+/* AMD x86-64 relocations. */
+#define R_X86_64_NONE 0  /* No reloc */
+#define R_X86_64_64 1    /* Direct 64 bit  */
+#define R_X86_64_PC32 2  /* PC relative 32 bit signed */
+#define R_X86_64_GOT32 3 /* 32 bit GOT entry */
+#define R_X86_64_PLT32 4 /* 32 bit PLT address */
 
 namespace elf {
 
@@ -93,13 +108,14 @@ typedef uint16_t Elf64_Section;
 typedef uint16_t Elf64_Half;
 typedef uint32_t Elf64_Word;
 typedef uint64_t Elf64_Xword;
+typedef int64_t Elf64_Sxword;
 typedef uint64_t Elf64_Addr;
 typedef uint64_t Elf64_Off;
 
 typedef std::vector<char> Block;
 typedef std::string Symbol;
 
-enum class SectionType { None, Text, Data, Header, SymTable, StrTable };
+enum class SectionType { None, Text, Data, Header, SymTable, StrTable, Rela };
 
 SectionType s_type_from_name(const std::string &n);
 
@@ -153,11 +169,19 @@ struct ElfSymbolTableEntry {
   Elf64_Xword st_size;    /* Symbol size */
 };
 
+struct ElfRelocAddendEntry {
+  Elf64_Addr r_offset;   /* Address */
+  Elf64_Xword r_info;    /* Relocation type and symbol index */
+  Elf64_Sxword r_addend; /* Addend */
+};
+
 struct ElfBinary {
   ElfHeader elf_header;
   std::unordered_map<SectionType, ElfSectionHeader> section_headers;
   std::unordered_map<SectionType, Block> sections;
   std::unordered_map<Symbol, ElfSymbolTableEntry> symbol_table;
+  std::vector<ElfSymbolTableEntry> symtab_entries;
+  std::unordered_map<Symbol, ElfRelocAddendEntry> rela_entries;
   std::string given_path;
 
   ElfBinary(const std::string &given_path) : given_path(given_path) {}

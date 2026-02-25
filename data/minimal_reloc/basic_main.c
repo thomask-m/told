@@ -21,20 +21,14 @@
 // 24: 5d                      pop    rbp
 // 25: c3                      ret
 
-// TODO(02-23-2026) -
-// Here are the problems with my output executable:
-// 1. It's starting straight from the first line of assembly in the text segment.
-//    That is no good because that isn't necessarily my program's entrypoint.
-//    I need to actually have the program entrypoint address set to the address
-//    of _start.
-// 2. There are no relocs happening. That call instruction needs to have an actual
-//    relative address written.
-// 3. I need better ways to actually assess the state of my executables. This will
-//    mean passing along more debug info from the other sections that I didn't do
-//    because I was too lazy :p
-
 extern int exit7();
 
+extern int exit119();
+
 int _start() {
-  exit7();
+  if (0) {
+    exit7();
+  } else {
+    exit119();
+  }
 }
