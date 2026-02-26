@@ -26,7 +26,8 @@ extern int exit7();
 extern int exit119();
 
 int _start() {
-  if (0) {
+  int a = 100 + 19;
+  if (a != 119) {
     exit7();
   } else {
     exit119();
