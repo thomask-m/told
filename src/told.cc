@@ -189,9 +189,11 @@ void apply_relocations(Executable &e) {
       const size_t text_sg_start_addr =
           e.segments.at(elf::SectionType::Text).start_addr;
       const size_t text_sg_offset = e.text_segment_offsets.at(m.first);
-      size_t next_instr_addr =
-          text_sg_offset + text_sg_start_addr + rela_offset + 3;
-      uint32_t new_addr = static_cast<uint32_t>(sym_addr - next_instr_addr);
+      const size_t next_instr_addr =
+          text_sg_offset + text_sg_start_addr + rela_offset;
+
+      uint32_t new_addr = static_cast<uint32_t>(sym_addr - next_instr_addr +
+                                                reloc.second.r_addend);
       update_block_content_with_reloc(
           e.segments.at(elf::SectionType::Text).block,
           static_cast<size_t>(text_sg_offset + rela_offset), new_addr);

@@ -9,7 +9,7 @@ extern int exit119();
 
 int _start() {
   int a = 100 + 19; // edit this value to get different results.
-  if (a != 111) {
+  if (a != 119) {
     exit7();
   } else {
     exit119();
