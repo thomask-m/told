@@ -92,9 +92,6 @@ void assert_no_undefined_global_symbols(const Executable &e) {
 
       if (ELF64_ST_BIND(curr_entry.st_info) == STB_GLOBAL &&
           ELF64_ST_TYPE(curr_entry.st_info) == STT_NOTYPE) {
-        // e        auto defined_sym = e.g_symbol_table.find(sym);
-        //  std::cout << "defined g sym: " << defined_sym->first << " "
-        //            << defined_sym->second.def_module << std::endl;
         assert(e.g_symbol_table.find(sym) != e.g_symbol_table.end() &&
                "Global symbol is not defined");
       }
@@ -233,8 +230,7 @@ elf::ElfHeader default_elf_header() {
   // TODO: implement these when section headers are added.
   eh.e_shnum = 0;
   eh.e_shoff = 0;
-  // TODO: fill this out with a proper value
-  eh.e_flags = 0;
+  eh.e_flags = 0; // this is apparently the correct value for x86 arch.
   eh.e_ehsize = sizeof(elf::ElfHeader);
   eh.e_phentsize = sizeof(elf::ElfProgramHeader);
   eh.e_phnum = 0;
@@ -244,7 +240,7 @@ elf::ElfHeader default_elf_header() {
   return eh;
 }
 
-elf::ElfProgramHeader convert_to_ph(const Segment &sg) {
+elf::ElfProgramHeader convert_segment_to_prog_header(const Segment &sg) {
   elf::ElfProgramHeader ph{};
   ph.p_type = sg.loadable ? PT_LOAD : PT_NULL; // TODO: this feels .. wrong..
   ph.p_flags = sg.executable ? PF_X : 0;
@@ -304,7 +300,7 @@ void write_out(const Executable &exec) {
 
   for (const auto &t : OUTPUT_SEGMENTS) {
     const Segment &s{exec.segments.at(t)};
-    elf::ElfProgramHeader ph{convert_to_ph(s)};
+    elf::ElfProgramHeader ph{convert_segment_to_prog_header(s)};
     ph.p_offset = i * TOLD_PAGE_SIZE;
     p_headers.emplace_back(ph);
     ++i;

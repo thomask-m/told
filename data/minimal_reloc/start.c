@@ -1,7 +1,7 @@
 // compile me but don't link me:
 // gcc -c start.c -o start.o
 // gcc -c exit.c -o exit.o
-// ld / told exit.o basic.o
+// ld / told exit.o start.o
 
 extern int exit7();
 
