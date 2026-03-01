@@ -36,6 +36,15 @@ struct GlobalSymTableEntry {
   elf::SectionType type;
 };
 
+struct StringTable {
+  elf::SectionType type;
+  std::vector<char> strings;
+
+  size_t size() const {
+    return strings.size();
+  }
+};
+
 struct Executable {
   std::string path;
   // contains names of input modules.
@@ -46,6 +55,10 @@ struct Executable {
   std::unordered_map<std::string, size_t> text_segment_offsets;
   std::unordered_map<elf::SectionType, Segment> segments;
   std::unordered_map<elf::Symbol, GlobalSymTableEntry> g_symbol_table;
+  std::vector<elf::ElfSectionHeader> section_headers;
+  std::vector<elf::ElfProgramHeader> program_headers;
+  elf::ElfHeader elf_header;
+  StringTable section_header_str_table;
 };
 
 elf::ElfBinary parse_object(const std::string &file_path);

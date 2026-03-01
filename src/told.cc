@@ -1,6 +1,7 @@
 #include "elf_utils.h"
 #include "told.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -212,8 +213,24 @@ init_exec(std::string &&output_path, std::vector<std::string> &&module_order,
   return e;
 }
 
-elf::ElfHeader default_elf_header() {
+size_t compute_section_header_offset(const Executable &e) {
+  size_t header_size = sizeof(elf::ElfHeader) +
+                       sizeof(elf::ElfProgramHeader) * e.segments.size();
+  size_t pad_between_header_segments = padding_sz(header_size);
+  size_t pad_after_segments{};
+  size_t segments_size{};
+  for (const auto &t : ACCEPTED_SECTIONS) {
+    segments_size = e.segments.at(t).block.size();
+    pad_after_segments += padding_sz(segments_size);
+  }
+
+  return header_size + pad_between_header_segments + segments_size +
+         pad_after_segments;
+}
+
+void add_elf_header(Executable &e) {
   elf::ElfHeader eh{};
+
   eh.e_ident[0] = '\x7f';
   eh.e_ident[1] = 'E';
   eh.e_ident[2] = 'L';
@@ -225,53 +242,110 @@ elf::ElfHeader default_elf_header() {
   eh.e_type = ET_EXEC;
   eh.e_machine = EM_X86_64;
   eh.e_version = EV_CURRENT;
-  eh.e_entry = TOLD_START_ADDR + TOLD_PAGE_SIZE;
+  eh.e_entry = e.g_symbol_table.at(ENTRY_SYM).addr;
   eh.e_phoff = sizeof(elf::ElfHeader);
-  // TODO: implement these when section headers are added.
-  eh.e_shnum = 0;
-  eh.e_shoff = 0;
+  eh.e_shoff = static_cast<elf::Elf64_Off>(compute_section_header_offset(e));
   eh.e_flags = 0; // this is apparently the correct value for x86 arch.
   eh.e_ehsize = sizeof(elf::ElfHeader);
   eh.e_phentsize = sizeof(elf::ElfProgramHeader);
-  eh.e_phnum = 0;
+  eh.e_phnum = static_cast<elf::Elf64_Half>(e.segments.size());
   eh.e_shentsize = sizeof(elf::ElfSectionHeader);
-  // TODO: for now, i am not gonna care about symbols, but this is needed later.
-  eh.e_shstrndx = SHN_UNDEF;
-  return eh;
+  eh.e_shnum = static_cast<elf::Elf64_Half>(e.section_headers.size());
+
+  eh.e_shstrndx = static_cast<elf::Elf64_Half>(e.section_headers.size() - 1);
+
+  e.elf_header = std::move(eh);
 }
 
-elf::ElfProgramHeader convert_segment_to_prog_header(const Segment &sg) {
-  elf::ElfProgramHeader ph{};
-  ph.p_type = sg.loadable ? PT_LOAD : PT_NULL; // TODO: this feels .. wrong..
-  ph.p_flags = sg.executable ? PF_X : 0;
-  ph.p_flags = ph.p_flags | PF_R;
-  ph.p_offset = 0;
-  ph.p_vaddr = sg.start_addr;
-  ph.p_paddr = sg.start_addr;
-  ph.p_filesz = sg.size;
-  ph.p_memsz = sg.size;
-  ph.p_align = TOLD_PAGE_SIZE;
-  return ph;
+std::vector<elf::ElfProgramHeader> create_program_headers(const Executable &e) {
+  std::vector<elf::ElfProgramHeader> phs{};
+  phs.reserve(e.segments.size());
+  size_t i{};
+  for (const auto &t : OUTPUT_SEGMENTS) {
+    Segment sg = e.segments.at(t);
+    elf::ElfProgramHeader ph{};
+    ph.p_type = sg.loadable ? PT_LOAD : PT_NULL;
+    ph.p_flags = sg.executable ? PF_X : 0;
+    ph.p_flags = ph.p_flags | PF_R;
+    ph.p_offset = i * TOLD_PAGE_SIZE;
+    ph.p_vaddr = sg.start_addr;
+    ph.p_paddr = sg.start_addr;
+    ph.p_filesz = sg.size;
+    ph.p_memsz = sg.size;
+    ph.p_align = TOLD_PAGE_SIZE;
+    phs.emplace_back(ph);
+    ++i;
+  }
+  return phs;
 }
 
-void write_to_fs(elf::ElfHeader &&eh, std::vector<elf::ElfProgramHeader> &&phs,
-                 const Executable &exec) {
-  std::ofstream output_exec(exec.path, std::ios::binary);
+StringTable setup_section_header_str_table(Executable &e) {
+  assert(!e.section_headers.empty() &&
+         "Section headers data needs to be written to Executable before "
+         "setting up shstrtab");
+  elf::ElfSectionHeader sh{};
+  sh.sh_type = SHT_STRTAB;
+  sh.sh_addralign = 1;
+  std::vector<char> table_data = {'\0', '.', 't', 'e', 'x', 't', '\0', '.', 's',
+                                  'h',  's', 't', 'r', 't', 'a', 'b',  '\0'};
+
+  sh.sh_size = table_data.size();
+  sh.sh_name = static_cast<elf::Elf64_Word>(table_data.size() - 10);
+  size_t sh_offset = compute_section_header_offset(e);
+  sh_offset += e.section_headers.size() * sizeof(elf::ElfSectionHeader);
+  sh.sh_offset = static_cast<elf::Elf64_Off>(sh_offset + padding_sz(sh_offset));
+
+  e.section_headers.emplace_back(sh);
+  StringTable shstrtab{elf::SectionType::ShStrTable, std::move(table_data)};
+  return shstrtab;
+}
+
+std::vector<elf::ElfSectionHeader> create_section_headers(const Executable &e) {
+  std::vector<elf::ElfSectionHeader> shs{elf::ElfSectionHeader{}};
+  shs.reserve(e.segments.size());
+
+  // TODO: I kind of hate how the section string table is getting setup.. that
+  //       is something that really needs a good refactor.
+  size_t shstrtab_offset = 1;
+  for (size_t i = 0; i < ACCEPTED_SECTIONS.size(); ++i) {
+    const Segment &sg = e.segments.at(ACCEPTED_SECTIONS[i]);
+    elf::ElfSectionHeader sh{};
+    sh.sh_name = static_cast<elf::Elf64_Word>(shstrtab_offset);
+    sh.sh_type = sg.loadable && sg.executable ? SHT_PROGBITS : SHT_NULL;
+    // TODO: SHF_ALLOC is not the correct default.
+    sh.sh_flags =
+        sg.loadable && sg.executable ? SHF_ALLOC | SHF_EXECINSTR : SHF_ALLOC;
+    sh.sh_addr = sg.start_addr;
+    sh.sh_offset = TOLD_PAGE_SIZE * (i + 1);
+    sh.sh_size = sg.size;
+    sh.sh_link = 0;
+    sh.sh_info = 0;
+    // TODO: 1?
+    sh.sh_addralign = 1;
+    sh.sh_entsize = 0;
+
+    shs.emplace_back(sh);
+  }
+  return shs;
+}
+
+void write_to_fs(const Executable &exec) {
+  std::ofstream output_exec(exec.path, std::ios_base::out | std::ios::binary);
   size_t w_ptr{};
   if (!output_exec.is_open()) {
     std::cerr << "Output exec file is not open before writing\n";
     exit(1);
   }
 
-  output_exec.write(reinterpret_cast<char *>(&eh), sizeof(elf::ElfHeader));
+  output_exec.write(reinterpret_cast<const char *>(&exec.elf_header),
+                    sizeof(elf::ElfHeader));
   w_ptr += sizeof(elf::ElfHeader);
-  for (elf::ElfProgramHeader &ph : phs) {
-    output_exec.write(reinterpret_cast<char *>(&ph),
+  for (const auto &ph : exec.program_headers) {
+    output_exec.write(reinterpret_cast<const char *>(&ph),
                       sizeof(elf::ElfProgramHeader));
     w_ptr += sizeof(elf::ElfProgramHeader);
   }
 
-  // TODO: write out section headers
   // TODO: write out symbol table
 
   std::optional<std::vector<char>> pad = padding(w_ptr);
@@ -287,28 +361,38 @@ void write_to_fs(elf::ElfHeader &&eh, std::vector<elf::ElfProgramHeader> &&phs,
     if (pad.has_value())
       output_exec.write(pad.value().data(), pad.value().size());
   }
+
+  w_ptr = 0;
+  for (const auto &sh : exec.section_headers) {
+    output_exec.write(reinterpret_cast<const char *>(&sh),
+                      sizeof(elf::ElfSectionHeader));
+    w_ptr += sizeof(elf::ElfSectionHeader);
+  }
+  pad = padding(w_ptr);
+  if (pad.has_value())
+    output_exec.write(pad.value().data(), pad.value().size());
+  w_ptr = exec.section_header_str_table.size();
+  for (size_t i = 0; i < exec.section_header_str_table.strings.size(); ++i) {
+    output_exec.write(reinterpret_cast<const char *>(
+                          &exec.section_header_str_table.strings[i]),
+                      1);
+  }
+  pad = padding(w_ptr);
+  if (pad.has_value())
+    output_exec.write(pad.value().data(), pad.value().size());
 }
 
-void write_out(const Executable &exec) {
-  elf::ElfHeader eh{default_elf_header()};
-  eh.e_phnum = static_cast<elf::Elf64_Half>(exec.segments.size());
-  eh.e_entry = exec.g_symbol_table.at(ENTRY_SYM).addr;
-
-  std::vector<elf::ElfProgramHeader> p_headers{};
-  p_headers.reserve(exec.segments.size());
-  size_t i{};
-
-  for (const auto &t : OUTPUT_SEGMENTS) {
-    const Segment &s{exec.segments.at(t)};
-    elf::ElfProgramHeader ph{convert_segment_to_prog_header(s)};
-    ph.p_offset = i * TOLD_PAGE_SIZE;
-    p_headers.emplace_back(ph);
-    ++i;
-  }
-
+void write_out(const Executable &e) {
   if (TRULY_WRITE_EXEC_FILE) {
-    write_to_fs(std::move(eh), std::move(p_headers), exec);
+    write_to_fs(e);
   }
+}
+
+void apply_headers(Executable &e) {
+  e.program_headers = std::move(create_program_headers(e));
+  e.section_headers = std::move(create_section_headers(e));
+  e.section_header_str_table = std::move(setup_section_header_str_table(e));
+  add_elf_header(e);
 }
 
 Executable link(std::vector<std::string> &&module_order,
@@ -321,6 +405,7 @@ Executable link(std::vector<std::string> &&module_order,
   apply_addrs_and_adjustments_to_segments(exec);
   apply_addrs_to_symbols(exec);
   apply_relocations(exec);
+  apply_headers(exec);
   return exec;
 }
 

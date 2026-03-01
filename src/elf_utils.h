@@ -38,6 +38,8 @@
 
 #define SHT_NULL (0)     /* Section header table entry unused */
 #define SHT_PROGBITS (1) /* Program data */
+#define SHT_SYMTAB (2)   /* Symbol table */
+#define SHT_STRTAB (3)   /* String table */
 
 #define SHF_WRITE (1 << 0)     /* Writable */
 #define SHF_ALLOC (1 << 1)     /* Occupies memory during execution */
@@ -115,7 +117,16 @@ typedef uint64_t Elf64_Off;
 typedef std::vector<char> Block;
 typedef std::string Symbol;
 
-enum class SectionType { None, Text, Data, Header, SymTable, StrTable, Rela };
+enum class SectionType {
+  None,
+  Text,
+  Data,
+  Header,
+  SymTable,
+  StrTable,
+  Rela,
+  ShStrTable
+};
 
 SectionType s_type_from_name(const std::string &n);
 
