@@ -304,9 +304,10 @@ std::vector<elf::ElfSectionHeader> create_section_headers(const Executable &e) {
   std::vector<elf::ElfSectionHeader> shs{elf::ElfSectionHeader{}};
   shs.reserve(e.segments.size());
 
-  // TODO: I kind of hate how the section string table is getting setup.. that
-  //       is something that really needs a good refactor.
-  size_t shstrtab_offset = 1;
+  // TODO(0): I kind of hate how the sect header string table is getting setup..
+  //       this is something that really needs a good refactor.
+  size_t shstrtab_offset = 1; // this should be getting incremented by the size
+                              // of the section name..
   for (size_t i = 0; i < ACCEPTED_SECTIONS.size(); ++i) {
     const Segment &sg = e.segments.at(ACCEPTED_SECTIONS[i]);
     elf::ElfSectionHeader sh{};
